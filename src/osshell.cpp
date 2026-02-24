@@ -6,11 +6,14 @@
 #include <vector>
 #include <filesystem>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 
 bool fileExecutableExists(std::string file_path);
 void splitString(std::string text, char d, std::vector<std::string>& result);
 void vectorOfStringsToArrayOfCharArrays(std::vector<std::string>& list, char ***result);
 void freeArrayOfCharArrays(char **array, size_t array_length);
+void forkC(const std::string& executable_path, const std::vector<std::string>& command_list);
 
 int main (int argc, char **argv)
 {
@@ -29,6 +32,57 @@ int main (int argc, char **argv)
 
     // Welcome message
     printf("Welcome to OSShell! Please enter your commands ('exit' to quit).\n");
+
+    while(true) {
+        std::cout << "osshell> ";
+
+        if (!std::getline(std::cin, user_command)) {
+            break; // EOF or error
+        }
+
+        if (user_command.empty()){
+            continue;
+        }
+
+        // Creates the tokenized command list from the user command
+        std::vector<std::string> command_list;
+        splitString(user_command, ' ', command_list);
+
+        // Checks for empty command
+        if (command_list.empty()){
+            continue;
+        }
+
+        // Follows command list, if the first command is exit, break the loop and quit the program
+        if (command_list[0] == "exit") {
+            break;  
+        }
+
+        std::string executable_path;
+        bool found = false;
+
+        for (const std::string& dir : os_path_list) {
+            std::string candidate = dir;
+            if (!candidate.empty() && candidate.back() != '/') {
+                candidate += '/';
+            }
+            candidate += command_list[0];
+
+            if (fileExecutableExists(candidate)) {
+                executable_path = candidate;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            std::cout << command_list[0] << ": Error command not found" << std::endl;
+            continue;
+        } 
+
+        forkC(executable_path, command_list);
+
+    }
 
     // Repeat:
     //  Print prompt for user input: "osshell> " (no newline)
@@ -95,9 +149,17 @@ int main (int argc, char **argv)
 */
 bool fileExecutableExists(std::string file_path)
 {
-    bool exists = false;
-    // check if `file_path` exists
-    // if so, ensure it is not a directory and that it has executable permissions
+    bool exists = true;
+
+    if (access(file_path.c_str(), X_OK) != 0) {
+        exists = false;
+    }
+    struct stat path_stat;
+    if (stat(file_path.c_str(), &path_stat) != 0) {
+        exists = false;
+    } else if (S_ISDIR(path_stat.st_mode)) {
+        exists = false;
+    }
 
     return exists;
 }
@@ -195,4 +257,29 @@ void freeArrayOfCharArrays(char **array, size_t array_length)
         }
     }
     delete[] array;
+}
+
+
+void forkC(const std::string& executable_path, const std::vector<std::string>& command_list)
+{
+    std::vector<std::string> command_list_copy = command_list;;
+
+    char **command_list_exec = nullptr;
+
+    vectorOfStringsToArrayOfCharArrays(command_list_copy, &command_list_exec);
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        execv(executable_path.c_str(), command_list_exec);
+
+        freeArrayOfCharArrays(command_list_exec, command_list.size());
+        _exit(1);
+    } else if (pid > 0){
+        int status = 0;
+        waitpid(pid, &status, 0);
+        freeArrayOfCharArrays(command_list_exec, command_list.size());
+    } else {
+        freeArrayOfCharArrays(command_list_exec, command_list.size());
+    }
 }
