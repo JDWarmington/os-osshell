@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cstdlib>
 #include <string>
 #include <cstring>
@@ -28,54 +29,117 @@ int main (int argc, char **argv)
     // Create variables for storing command user types
     std::string user_command;               // to store command user types in
     std::vector<std::string> command_list;  // to store `user_command` split into its variour parameters
-    char **command_list_exec;               // to store `command_list` converted to an array of character arrays
+
+    //array is created and used in forkC() function
+    //char **command_list_exec;               // to store `command_list` converted to an array of character arrays
+
+    //if history exists, read into vector
+    std::string file = "osshell_history.txt";
+    if(std::filesystem::exists(file)) 
+    {
+        std::ifstream input_file(file);
+        if(input_file.is_open())
+        {
+            while(std::getline(input_file, user_command))
+            {
+                history.push_back(user_command);
+            }
+        } 
+        else 
+        {
+            std::cerr << "Error: Unable to open file" << std::endl;
+        }
+    }
 
     // Welcome message
     printf("Welcome to OSShell! Please enter your commands ('exit' to quit).\n");
 
-    while(true) {
+    while(true) 
+    {
         std::cout << "osshell> ";
 
-        if (!std::getline(std::cin, user_command)) {
+        if (!std::getline(std::cin, user_command)) 
+        {
             break; // EOF or error
         }
 
-        if (user_command.empty()){
+        if (user_command.empty())
+        {
             continue;
         }
 
         // Creates the tokenized command list from the user command
-        std::vector<std::string> command_list;
         splitString(user_command, ' ', command_list);
 
         // Checks for empty command
-        if (command_list.empty()){
+        if (command_list.empty())
+        {
             continue;
         }
 
-        // Follows command list, if the first command is exit, break the loop and quit the program
-        if (command_list[0] == "exit") {
+        // Follows command list, if the first command is exit, save history and break to quit the program
+        if (command_list[0] == "exit") 
+        {
+            std::ofstream output_file(file);
+            for(std::string_view line: history)
+            {
+                output_file << line << std::endl;
+            }
             break;  
+        }
+
+        //filesystem::path covers both ./ and ../ cases
+        if(command_list[0][0] == '.')
+        {
+            std::filesystem::path wd = std::filesystem::current_path();
+            wd /= std::filesystem::path(command_list[0]);
+            wd = wd.lexically_normal();
+            if(fileExecutableExists(wd.string())) 
+            {
+                forkC(wd.string(), command_list);
+            }
+            else 
+            {
+                std::cout << command_list[0] << ": Error command not found" << std::endl;
+            }
+            continue;
+        }
+
+        if(command_list[0][0] == '/') 
+        {
+            if(fileExecutableExists(command_list[0]))
+            {
+                forkC(command_list[0],command_list);
+            }
+            else
+            {
+                std::cout << command_list[0] << ": Error command not found" << std::endl;
+            }
+            continue;
         }
 
         std::string executable_path;
         bool found = false;
 
-        for (const std::string& dir : os_path_list) {
+        for (const std::string& dir : os_path_list) 
+        {
             std::string candidate = dir;
-            if (!candidate.empty() && candidate.back() != '/') {
+            if (!candidate.empty() && candidate.back() != '/') 
+            {
                 candidate += '/';
             }
             candidate += command_list[0];
 
-            if (fileExecutableExists(candidate)) {
+            if (fileExecutableExists(candidate)) 
+            {
                 executable_path = candidate;
                 found = true;
                 break;
             }
         }
 
-        if (!found) {
+        if (!found) 
+        {
             std::cout << command_list[0] << ": Error command not found" << std::endl;
             continue;
         } 
@@ -98,8 +162,9 @@ int main (int argc, char **argv)
     /************************************************************************************
      *   Example code - remove in actual program                                        *
      ************************************************************************************/
+    
     // Shows how to loop over the directories in the PATH environment variable
-    int i;
+    /*int i;
     for (i = 0; i < os_path_list.size(); i++)
     {
         printf("PATH[%2d]: %s\n", i, os_path_list[i].c_str());
@@ -135,10 +200,11 @@ int main (int argc, char **argv)
     // free memory for `command_list_exec`
     freeArrayOfCharArrays(command_list_exec, command_list.size() + 1);
     printf("------\n");
+    */
+
     /************************************************************************************
      *   End example code                                                               *
      ************************************************************************************/
-
 
     return 0;
 }
@@ -150,14 +216,16 @@ int main (int argc, char **argv)
 bool fileExecutableExists(std::string file_path)
 {
     bool exists = true;
-
-    if (access(file_path.c_str(), X_OK) != 0) {
+    struct stat path_stat;
+    if (access(file_path.c_str(), X_OK) != 0) 
+    {
         exists = false;
     }
-    struct stat path_stat;
-    if (stat(file_path.c_str(), &path_stat) != 0) {
+     else if (stat(file_path.c_str(), &path_stat) != 0) 
+    {
         exists = false;
-    } else if (S_ISDIR(path_stat.st_mode)) {
+    } else if (S_ISDIR(path_stat.st_mode)) 
+    {
         exists = false;
     }
 
@@ -270,16 +338,21 @@ void forkC(const std::string& executable_path, const std::vector<std::string>& c
 
     pid_t pid = fork();
 
-    if (pid == 0) {
+    if (pid == 0) 
+    {
         execv(executable_path.c_str(), command_list_exec);
 
         freeArrayOfCharArrays(command_list_exec, command_list.size());
         _exit(1);
-    } else if (pid > 0){
+    } 
+    else if (pid > 0)
+    {
         int status = 0;
         waitpid(pid, &status, 0);
         freeArrayOfCharArrays(command_list_exec, command_list.size());
-    } else {
+    } 
+    else 
+    {
         freeArrayOfCharArrays(command_list_exec, command_list.size());
     }
 }
