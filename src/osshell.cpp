@@ -1,3 +1,4 @@
+#include <climits>
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
@@ -15,6 +16,7 @@ void splitString(std::string text, char d, std::vector<std::string>& result);
 void vectorOfStringsToArrayOfCharArrays(std::vector<std::string>& list, char ***result);
 void freeArrayOfCharArrays(char **array, size_t array_length);
 void forkC(const std::string& executable_path, const std::vector<std::string>& command_list);
+int countHistoryLines(const std::string& filename);
 
 int main (int argc, char **argv)
 {
@@ -35,7 +37,7 @@ int main (int argc, char **argv)
 
     //if history exists, read into vector
     std::string file = "osshell_history.txt";
-    if(std::filesystem::exists(file)) 
+    if(std::filesystem::exists(file))
     {
         std::ifstream input_file(file);
         if(input_file.is_open())
@@ -44,8 +46,8 @@ int main (int argc, char **argv)
             {
                 history.push_back(user_command);
             }
-        } 
-        else 
+        }
+        else
         {
             std::cerr << "Error: Unable to open file" << std::endl;
         }
@@ -54,11 +56,14 @@ int main (int argc, char **argv)
     // Welcome message
     printf("Welcome to OSShell! Please enter your commands ('exit' to quit).\n");
 
-    while(true) 
+    while(true)
     {
+        int total_history_lines = countHistoryLines(file);
+
+        bool found = false;
         std::cout << "osshell> ";
 
-        if (!std::getline(std::cin, user_command)) 
+        if (!std::getline(std::cin, user_command))
         {
             break; // EOF or error
         }
@@ -77,15 +82,57 @@ int main (int argc, char **argv)
             continue;
         }
 
+
+        if (command_list[0] == "history")
+        {
+          if (command_list.size() > 1 && command_list[1] == "clear") {
+            std::ofstream clearFile(file, std::ios::trunc);
+            clearFile.close();
+            history.clear();
+          } else if (command_list.size() > 1) {
+            // history with integer case
+            try {
+              int n = std::stoi(command_list[1]);
+               if (n >= 1 && n <= 128)
+              {
+                std::ifstream inputFile(file);
+                std::string line;
+                int num = 1;
+                while (std::getline(inputFile, line)) {
+                  if (num >= total_history_lines - n + 1) {
+                    std::cout << num << ": " << line << std::endl;
+                  }
+                  num++;
+                }
+               } else {
+                std::cout << "Error, history expects integer > 0 (or 'clear')" << std::endl;
+              }
+            } catch (const std::exception &) {
+              std::cout << user_command << ": Error command not found" << std::endl;
+            }
+          } else {
+            std::ifstream inputFile(file);
+
+            std::string line;
+            int num = 1;
+            while (std::getline(inputFile, line)) {
+              std::cout << num << ": " << line << std::endl;
+              num++;
+            }
+          }
+          found = true;
+          continue;
+        }
+
         // Follows command list, if the first command is exit, save history and break to quit the program
-        if (command_list[0] == "exit") 
+        if (command_list[0] == "exit")
         {
             std::ofstream output_file(file);
             for(std::string_view line: history)
             {
                 output_file << line << std::endl;
             }
-            break;  
+            break;
         }
 
         //filesystem::path covers both ./ and ../ cases
@@ -94,18 +141,18 @@ int main (int argc, char **argv)
             std::filesystem::path wd = std::filesystem::current_path();
             wd /= std::filesystem::path(command_list[0]);
             wd = wd.lexically_normal();
-            if(fileExecutableExists(wd.string())) 
+            if(fileExecutableExists(wd.string()))
             {
                 forkC(wd.string(), command_list);
             }
-            else 
+            else
             {
-                std::cout << command_list[0] << ": Error command not found" << std::endl;
+                std::cout << user_command << ": Error command not found" << std::endl;
             }
             continue;
         }
 
-        if(command_list[0][0] == '/') 
+        if(command_list[0][0] == '/')
         {
             if(fileExecutableExists(command_list[0]))
             {
@@ -113,24 +160,23 @@ int main (int argc, char **argv)
             }
             else
             {
-                std::cout << command_list[0] << ": Error command not found" << std::endl;
+                std::cout << user_command << ": Error command not found" << std::endl;
             }
             continue;
         }
 
         std::string executable_path;
-        bool found = false;
 
-        for (const std::string& dir : os_path_list) 
+        for (const std::string& dir : os_path_list)
         {
             std::string candidate = dir;
-            if (!candidate.empty() && candidate.back() != '/') 
+            if (!candidate.empty() && candidate.back() != '/')
             {
                 candidate += '/';
             }
             candidate += command_list[0];
 
-            if (fileExecutableExists(candidate)) 
+            if (fileExecutableExists(candidate))
             {
                 executable_path = candidate;
                 found = true;
@@ -138,11 +184,28 @@ int main (int argc, char **argv)
             }
         }
 
-        if (!found) 
+        history.push_back(user_command);
+        std::ofstream outFile(file, std::ios::app);
+        if (outFile.is_open()) {
+          outFile << user_command << std::endl;
+          outFile.close();
+        }
+
+        if (history.size() > 128) {
+          history.erase(history.begin());
+          std::ofstream outFile(file);
+          for (const auto& cmd : history)
+          {
+              outFile << cmd << std::endl;
+          }
+        }
+
+        if (!found)
         {
-            std::cout << command_list[0] << ": Error command not found" << std::endl;
+            std::cout << user_command << ": Error command not found" << std::endl;
             continue;
-        } 
+        }
+
 
         forkC(executable_path, command_list);
 
@@ -162,7 +225,7 @@ int main (int argc, char **argv)
     /************************************************************************************
      *   Example code - remove in actual program                                        *
      ************************************************************************************/
-    
+
     // Shows how to loop over the directories in the PATH environment variable
     /*int i;
     for (i = 0; i < os_path_list.size(); i++)
@@ -170,7 +233,7 @@ int main (int argc, char **argv)
         printf("PATH[%2d]: %s\n", i, os_path_list[i].c_str());
     }
     printf("------\n");
-    
+
     // Shows how to split a command and prepare for the execv() function
     std::string example_command = "ls -lh";
     splitString(example_command, ' ', command_list);
@@ -217,14 +280,14 @@ bool fileExecutableExists(std::string file_path)
 {
     bool exists = true;
     struct stat path_stat;
-    if (access(file_path.c_str(), X_OK) != 0) 
+    if (access(file_path.c_str(), X_OK) != 0)
     {
         exists = false;
     }
-     else if (stat(file_path.c_str(), &path_stat) != 0) 
+     else if (stat(file_path.c_str(), &path_stat) != 0)
     {
         exists = false;
-    } else if (S_ISDIR(path_stat.st_mode)) 
+    } else if (S_ISDIR(path_stat.st_mode))
     {
         exists = false;
     }
@@ -338,21 +401,33 @@ void forkC(const std::string& executable_path, const std::vector<std::string>& c
 
     pid_t pid = fork();
 
-    if (pid == 0) 
+    if (pid == 0)
     {
         execv(executable_path.c_str(), command_list_exec);
 
         freeArrayOfCharArrays(command_list_exec, command_list.size());
         _exit(1);
-    } 
+    }
     else if (pid > 0)
     {
         int status = 0;
         waitpid(pid, &status, 0);
         freeArrayOfCharArrays(command_list_exec, command_list.size());
-    } 
-    else 
+    }
+    else
     {
         freeArrayOfCharArrays(command_list_exec, command_list.size());
     }
+}
+
+int countHistoryLines(const std::string& filename)
+{
+    std::ifstream file(filename);
+    int count = 0;
+    std::string line;
+    while (std::getline(file, line))
+    {
+        count++;
+    }
+    return count;
 }
