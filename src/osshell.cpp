@@ -89,10 +89,25 @@ int main (int argc, char **argv)
             std::ofstream clearFile(file, std::ios::trunc);
             clearFile.close();
             history.clear();
+            found = true;
+            continue;
           } else if (command_list.size() > 1) {
             // history with integer case
             try {
-              int n = std::stoi(command_list[1]);
+              size_t pos;
+              int n = std::stoi(command_list[1], &pos);
+
+              if (pos != command_list[1].length()) {
+                std::cout << "Error, history expects integer > 0 (or 'clear')" << std::endl;
+                history.push_back(user_command);
+                std::ofstream outFile(file, std::ios::app);
+                if (outFile.is_open()) {
+                  outFile << user_command << std::endl;
+                  outFile.close();
+                }
+                continue;
+              }
+
                if (n >= 1 && n <= 128)
               {
                 std::ifstream inputFile(file);
@@ -119,9 +134,9 @@ int main (int argc, char **argv)
               std::cout << num << ": " << line << std::endl;
               num++;
             }
+            continue;
           }
           found = true;
-          continue;
         }
 
         // Follows command list, if the first command is exit, save history and break to quit the program
