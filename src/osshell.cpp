@@ -108,7 +108,7 @@ int main (int argc, char **argv)
                 continue;
               }
 
-               if (n >= 1 && n <= 128)
+               if (n >= 1)
               {
                 std::ifstream inputFile(file);
                 std::string line;
